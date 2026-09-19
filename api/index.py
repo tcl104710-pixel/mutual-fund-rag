@@ -1,23 +1,26 @@
 import os
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_cohere import CohereEmbeddings
 from langchain_groq import ChatGroq
-from langchain_community.vectorstores import Chroma
+from langchain_pinecone import PineconeVectorStore
 from langchain_core.prompts import PromptTemplate
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv()
 
-app = Flask(__name__, static_folder='stitch_mutual_fund_faq_chatbot', static_url_path='/assets')
+app = Flask(__name__)
 
 # Setup Vector Store
-persist_directory = "./chroma_db"
-embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+index_name = os.environ.get("PINECONE_INDEX_NAME", "mutual-fund-rag")
+cohere_api_key = os.environ.get("COHERE_API_KEY")
+pinecone_api_key = os.environ.get("PINECONE_API_KEY")
 
-if os.path.exists(persist_directory):
-    vectorstore = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+if cohere_api_key and pinecone_api_key:
+    # embed-english-light-v3.0 has 384 dimensions
+    embeddings = CohereEmbeddings(model="embed-english-light-v3.0", cohere_api_key=cohere_api_key)
+    vectorstore = PineconeVectorStore(index_name=index_name, embedding=embeddings, pinecone_api_key=pinecone_api_key)
     retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 5, "fetch_k": 20})
 else:
     vectorstore = None
@@ -56,7 +59,7 @@ def check_input_guardrails(query):
 
 def generate_response(query):
     if not retriever or not llm:
-        return "System is not properly configured. Please check your API keys and ensure data ingestion is complete."
+        return "System is not properly configured. Please check your API keys (Groq, Cohere, Pinecone) in the Vercel Environment Variables."
     
     if not check_input_guardrails(query):
         return "I can only provide factual information based on official documents. I cannot provide investment advice, recommendations, or fund comparisons. For guidance, please refer to AMFI or SEBI resources."
@@ -94,11 +97,6 @@ def generate_response(query):
         "copyCitation": f"{answer_text} (Source: {source_url})"
     }
 
-@app.route("/")
-def index():
-    # Serve the stitch generated HTML file
-    return send_file(os.path.join("stitch_mutual_fund_faq_chatbot", "code.html"))
-
 @app.route("/api/chat", methods=["POST"])
 def chat():
     data = request.json
@@ -107,7 +105,6 @@ def chat():
         return jsonify({"answer": "Please ask a question.", "docName": "Error", "docMeta": "", "copyCitation": ""})
     
     response_data = generate_response(query)
-    # If generate_response returned a string (e.g. guardrail refusal), wrap it
     if isinstance(response_data, str):
         return jsonify({
             "answer": response_data,
@@ -117,5 +114,11 @@ def chat():
         })
     return jsonify(response_data)
 
+# Fallback route for local testing
+@app.route("/")
+def index():
+    return send_file(os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html"))
+
+# For Vercel, the app needs to be exposed.
 if __name__ == "__main__":
     app.run(port=5000)

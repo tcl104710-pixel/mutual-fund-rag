@@ -2,8 +2,8 @@ import os
 import requests
 from document_fetcher import DocumentFetcher
 from langchain_text_splitters import HTMLHeaderTextSplitter, RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_pinecone import PineconeVectorStore
+from langchain_cohere import CohereEmbeddings
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -45,7 +45,7 @@ def chunk_text(html_content, url):
     return splits
 
 def process_and_ingest():
-    """Main pipeline for scraping, chunking, and ingesting into ChromaDB."""
+    """Main pipeline for scraping, chunking, and ingesting into Pinecone."""
     all_chunks = []
     
     print("Starting data ingestion phase...")
@@ -74,17 +74,16 @@ def process_and_ingest():
     
     if all_chunks:
         print("Initializing Embedding Model...")
-        embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+        embeddings = CohereEmbeddings(model="embed-english-light-v3.0")
         
-        print("Ingesting into ChromaDB...")
-        # Persist directory for Chroma
-        persist_directory = "./chroma_db"
-        vectorstore = Chroma.from_documents(
+        print("Ingesting into Pinecone Vector Store...")
+        index_name = os.environ.get("PINECONE_INDEX_NAME", "mutual-fund-rag")
+        PineconeVectorStore.from_documents(
             documents=all_chunks, 
             embedding=embeddings, 
-            persist_directory=persist_directory
+            index_name=index_name
         )
-        print("Ingestion complete. Data persisted to './chroma_db'")
+        print("Ingestion complete!")
     else:
         print("No chunks to ingest.")
 
