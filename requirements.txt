@@ -1,0 +1,11 @@
+langchain
+chromadb
+beautifulsoup4
+streamlit
+langchain-groq
+langchain-huggingface
+sentence-transformers
+langchain-text-splitters
+python-dotenv
+requests
+lxml
