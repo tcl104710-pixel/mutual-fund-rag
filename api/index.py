@@ -114,11 +114,6 @@ def chat():
         })
     return jsonify(response_data)
 
-# Fallback route for local testing
-@app.route("/")
-def index():
-    return send_file(os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html"))
-
 # For Vercel, the app needs to be exposed.
 if __name__ == "__main__":
     app.run(port=5000)
